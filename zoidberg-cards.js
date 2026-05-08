@@ -418,6 +418,30 @@ const STATE_COLORS = {
   zen: "#3a9ab0",
 };
 
+// Shared cache — only fetch Zoidberg API once across all instances
+let _zoidbergStatePromise = null;
+let _zoidbergStateData = null;
+let _zoidbergStateFetchedAt = 0;
+
+async function fetchZoidbergState(apiUrl) {
+  const now = Date.now();
+  // Cache for 60s
+  if (_zoidbergStateData && (now - _zoidbergStateFetchedAt) < 60000) {
+    return _zoidbergStateData;
+  }
+  if (_zoidbergStatePromise) return _zoidbergStatePromise;
+  _zoidbergStatePromise = fetch(apiUrl, { mode: "cors" })
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      _zoidbergStateData = d?.state || null;
+      _zoidbergStateFetchedAt = Date.now();
+      _zoidbergStatePromise = null;
+      return _zoidbergStateData;
+    })
+    .catch(e => { _zoidbergStatePromise = null; console.warn("[zoidberg] fetch failed:", e); return null; });
+  return _zoidbergStatePromise;
+}
+
 class ZoidbergStateTag extends HTMLElement {
   constructor() {
     super();
@@ -427,12 +451,31 @@ class ZoidbergStateTag extends HTMLElement {
     this._config = {
       mood_entity: "sensor.zoidberg_mood",
       label_entity: null,
+      api_url: config.api_url || "http://76.13.66.197:8787/api/today",
       ...config,
     };
     this._render();
+    // Fetch state from API
+    this._fetchAndUpdate();
+    // Refresh every 5 min
+    if (this._refreshInterval) clearInterval(this._refreshInterval);
+    this._refreshInterval = setInterval(() => this._fetchAndUpdate(), 5 * 60 * 1000);
   }
   set hass(h) { this._hass = h; if (this._config) this._update(); }
   getCardSize() { return 1; }
+
+  async _fetchAndUpdate() {
+    if (!this._config?.api_url) return;
+    const state = await fetchZoidbergState(this._config.api_url);
+    if (state) {
+      this._apiState = state;
+      this._update();
+    }
+  }
+
+  disconnectedCallback() {
+    if (this._refreshInterval) clearInterval(this._refreshInterval);
+  }
 
   _render() {
     if (this.shadowRoot.querySelector(".tag")) return;
@@ -459,6 +502,13 @@ class ZoidbergStateTag extends HTMLElement {
   }
 
   _computeState() {
+    // PREFER API state if available (has true state.label like "Sedentário")
+    if (this._apiState && this._apiState.label) {
+      return {
+        label: this._apiState.label.toUpperCase(),
+        mood: (this._apiState.mood || "neutral").toLowerCase(),
+      };
+    }
     if (!this._hass) return { label: "—", mood: "neutral" };
     const s = (e) => parseFloat(this._hass.states[e]?.state);
     const recovery = s("sensor.zoidberg_recovery_score");
