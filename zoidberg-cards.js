@@ -92,7 +92,7 @@ class RecoveryScoreCard extends HTMLElement {
     };
     this._render();
   }
-  set hass(h) { this._hass = h; this._update(); }
+  set hass(h) { this._hass = h; if (this._config) this._update(); }
   getCardSize() { return 2; }
 
   _render() {
@@ -173,7 +173,7 @@ class SleepBreakdownCard extends HTMLElement {
     };
     this._render();
   }
-  set hass(h) { this._hass = h; this._update(); }
+  set hass(h) { this._hass = h; if (this._config) this._update(); }
   getCardSize() { return 3; }
 
   _render() {
@@ -311,7 +311,7 @@ class ZoidbergMetricCard extends HTMLElement {
     };
     this._render();
   }
-  set hass(h) { this._hass = h; this._update(); }
+  set hass(h) { this._hass = h; if (this._config) this._update(); }
   getCardSize() { return 1; }
 
   _render() {
@@ -431,7 +431,7 @@ class ZoidbergStateTag extends HTMLElement {
     };
     this._render();
   }
-  set hass(h) { this._hass = h; this._update(); }
+  set hass(h) { this._hass = h; if (this._config) this._update(); }
   getCardSize() { return 1; }
 
   _render() {
@@ -485,7 +485,7 @@ class ZoidbergTitleCard extends HTMLElement {
     this._config = { title: "ZOIDBERG HEALTH", ...config };
     this._render();
   }
-  set hass(h) { this._hass = h; this._updateDate(); }
+  set hass(h) { this._hass = h; if (this._config) this._updateDate(); }
   getCardSize() { return 2; }
 
   _render() {
@@ -560,7 +560,7 @@ class ZoidbergWeeklyCard extends HTMLElement {
     };
     this._render();
   }
-  set hass(h) { this._hass = h; this._update(); }
+  set hass(h) { this._hass = h; if (this._config) this._update(); }
   getCardSize() { return 2; }
 
   _render() {
@@ -632,7 +632,7 @@ class ZoidbergSpeechBubble extends HTMLElement {
     };
     this._render();
   }
-  set hass(h) { this._hass = h; this._update(); }
+  set hass(h) { this._hass = h; if (this._config) this._update(); }
   getCardSize() { return 2; }
 
   _render() {
@@ -747,7 +747,7 @@ class ZoidbergMiniMetric extends HTMLElement {
     };
     this._render();
   }
-  set hass(h) { this._hass = h; this._update(); }
+  set hass(h) { this._hass = h; if (this._config) this._update(); }
   getCardSize() { return 1; }
 
   _render() {
@@ -985,7 +985,7 @@ class ZoidbergAnatomy extends HTMLElement {
     };
     this._render();
   }
-  set hass(h) { this._hass = h; this._propagate(); }
+  set hass(h) { this._hass = h; if (this._config) this._propagate(); }
   getCardSize() { return 8; }
 
   _render() {
