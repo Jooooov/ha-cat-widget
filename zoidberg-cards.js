@@ -613,6 +613,221 @@ class ZoidbergWeeklyCard extends HTMLElement {
 customElements.define("zoidberg-weekly-card", ZoidbergWeeklyCard);
 
 // =========================================================================
+// 7) ZOIDBERG SPEECH BUBBLE — comic-book style with typewriter
+// =========================================================================
+class ZoidbergSpeechBubble extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._lastText = "";
+    this._typingTimer = null;
+  }
+  setConfig(config) {
+    this._config = {
+      entity: "sensor.zoidberg_commentary",
+      label: "ZOIDBERG DIZ",
+      tail: "left", // left = pointing to cat on the right
+      typewriter: true,
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._update(); }
+  getCardSize() { return 2; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".bubble")) return;
+    const tailLeft = this._config.tail === "left";
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display: block; }
+      .bubble {
+        position: relative;
+        background: #ffffff;
+        border: 3px solid #1a1a2e;
+        border-radius: 18px;
+        padding: 14px 18px;
+        font: 500 14px/1.5 'Inter','Segoe UI',sans-serif;
+        color: #1a1a2e;
+        box-shadow: 3px 3px 0 #1a1a2e;
+        max-width: 320px;
+      }
+      .label {
+        font-size: 10px; font-weight: 800; color: #9ca3af;
+        letter-spacing: 1.2px; text-transform: uppercase;
+        margin-bottom: 6px;
+      }
+      .text { min-height: 1.5em; }
+      .text::after {
+        content: '|';
+        opacity: 0;
+        animation: blink 1s steps(1) infinite;
+        color: #6b7280;
+      }
+      .text.done::after { display: none; }
+      @keyframes blink { 50% { opacity: 1; } }
+
+      /* Comic-style tail */
+      .bubble::before, .bubble::after {
+        content: '';
+        position: absolute;
+        top: 60%;
+        ${tailLeft ? 'left: -18px;' : 'right: -18px;'}
+        border-style: solid;
+      }
+      .bubble::before {
+        border-width: 12px 18px 12px 0;
+        ${tailLeft
+          ? 'border-color: transparent #1a1a2e transparent transparent;'
+          : 'border-width: 12px 0 12px 18px; border-color: transparent transparent transparent #1a1a2e;'}
+      }
+      .bubble::after {
+        ${tailLeft ? 'left: -13px;' : 'right: -13px;'}
+        border-width: 9px 14px 9px 0;
+        ${tailLeft
+          ? 'border-color: transparent #ffffff transparent transparent;'
+          : 'border-width: 9px 0 9px 14px; border-color: transparent transparent transparent #ffffff;'}
+      }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "bubble";
+    wrap.innerHTML = `
+      <div class="label">${this._config.label}</div>
+      <div class="text"></div>
+    `;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+  }
+
+  _update() {
+    if (!this._hass) return;
+    const text = this._hass.states[this._config.entity]?.state || "—";
+    if (text === this._lastText) return;
+    this._lastText = text;
+    const textEl = this.shadowRoot.querySelector(".text");
+    if (!textEl) return;
+    if (!this._config.typewriter) {
+      textEl.textContent = text;
+      textEl.classList.add("done");
+      return;
+    }
+    if (this._typingTimer) clearInterval(this._typingTimer);
+    textEl.textContent = "";
+    textEl.classList.remove("done");
+    let i = 0;
+    this._typingTimer = setInterval(() => {
+      if (i >= text.length) {
+        clearInterval(this._typingTimer);
+        textEl.classList.add("done");
+        return;
+      }
+      textEl.textContent = text.slice(0, ++i);
+    }, 28);
+  }
+}
+customElements.define("zoidberg-speech-bubble-card", ZoidbergSpeechBubble);
+
+// =========================================================================
+// 8) ZOIDBERG MINI METRIC — compact card for body-part anchoring
+// =========================================================================
+class ZoidbergMiniMetric extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      entity: "",
+      label: "",
+      icon: "•",
+      color: "#5b8dee",
+      unit: "",
+      compact: true,
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._update(); }
+  getCardSize() { return 1; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".mini")) return;
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display: block; }
+      .mini {
+        background: #ffffff;
+        border-radius: 14px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+        padding: 10px 14px;
+        font-family: 'Inter','Segoe UI',sans-serif;
+        color: #1a1a2e;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        border: 2px solid #f0ece8;
+      }
+      .icon {
+        font-size: 22px;
+        flex-shrink: 0;
+      }
+      .col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+      .label {
+        font-size: 9px;
+        font-weight: 800;
+        color: #9ca3af;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+      }
+      .value-row { display: flex; align-items: baseline; gap: 3px; }
+      .value {
+        font-size: 18px;
+        font-weight: 800;
+        color: #1a1a2e;
+        line-height: 1;
+      }
+      .unit {
+        font-size: 11px;
+        color: #6b7280;
+        font-weight: 600;
+      }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "mini";
+    wrap.innerHTML = `
+      <span class="icon"></span>
+      <div class="col">
+        <span class="label"></span>
+        <div class="value-row">
+          <span class="value">–</span>
+          <span class="unit"></span>
+        </div>
+      </div>
+    `;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+  }
+
+  _update() {
+    if (!this._hass) return;
+    const c = this._config;
+    const raw = this._hass.states[c.entity]?.state;
+    const v = num(raw);
+    const unit = c.unit || (this._hass.states[c.entity]?.attributes?.unit_of_measurement || "");
+    this.shadowRoot.querySelector(".icon").textContent = c.icon;
+    this.shadowRoot.querySelector(".label").textContent = c.label;
+    this.shadowRoot.querySelector(".value").textContent = v != null ? Math.round(v).toLocaleString("pt-PT") : (raw || "–");
+    this.shadowRoot.querySelector(".unit").textContent = unit;
+    this.shadowRoot.querySelector(".icon").style.color = c.color;
+    // Subtle accent border bottom
+    const wrap = this.shadowRoot.querySelector(".mini");
+    wrap.style.borderColor = c.color + "30";
+  }
+}
+customElements.define("zoidberg-mini-metric", ZoidbergMiniMetric);
+
+// =========================================================================
 // Lovelace card-picker registration
 // =========================================================================
 window.customCards = window.customCards || [];
@@ -623,6 +838,8 @@ window.customCards = window.customCards || [];
   { type: "zoidberg-state-tag-card", name: "Zoidberg · State Tag", description: "Mood-colored pill tag." },
   { type: "zoidberg-title-card", name: "Zoidberg · Title", description: "Bangers gradient title + date." },
   { type: "zoidberg-weekly-card", name: "Zoidberg · Weekly Summary", description: "Weekly pills (workouts, steps, HRV, sleep)." },
+  { type: "zoidberg-speech-bubble-card", name: "Zoidberg · Speech Bubble", description: "Comic-style bubble with typewriter effect." },
+  { type: "zoidberg-mini-metric", name: "Zoidberg · Mini Metric", description: "Compact metric for body-part anchoring." },
 ].forEach(c => window.customCards.push({ ...c, preview: false }));
 
 console.info(
