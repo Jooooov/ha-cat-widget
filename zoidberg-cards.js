@@ -918,10 +918,16 @@ class ZoidbergRing extends HTMLElement {
   }
 
   _update() {
-    if (!this._hass) return;
     const c = this._config;
-    const raw = this._hass.states[c.entity]?.state;
+    if (!this._hass) {
+      console.log(`[zoidberg-ring:${c.entity}] no hass yet`);
+      return;
+    }
+    const ent = this._hass.states[c.entity];
+    const raw = ent?.state;
     const v = num(raw);
+    console.log(`[zoidberg-ring:${c.entity}] raw=${raw} parsed=${v} target=${c.target}`);
+
     const target = c.target || 100;
     const pct = v != null ? Math.max(0, Math.min(1.05, v / target)) : 0;
     const offset = this._circ * (1 - Math.min(1, pct));
@@ -930,7 +936,12 @@ class ZoidbergRing extends HTMLElement {
 
     const valEl = this.shadowRoot.querySelector(".ring-value");
     if (valEl) {
-      valEl.textContent = v != null ? Math.round(v).toLocaleString("pt-PT") : (raw || "–");
+      const display = v != null
+        ? Math.round(v).toLocaleString("pt-PT")
+        : (raw && raw !== "unavailable" && raw !== "unknown" ? raw : "–");
+      valEl.textContent = display;
+    } else {
+      console.warn(`[zoidberg-ring] .ring-value not found for ${c.entity}`);
     }
   }
 }
