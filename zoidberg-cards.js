@@ -1,0 +1,632 @@
+/**
+ * zoidberg-cards.js — Lovelace cards replicating the Zoidberg web app design.
+ *
+ * Custom elements registered:
+ *   <recovery-score-card>      — circular progress ring with score + label + subtitle
+ *   <sleep-breakdown-card>     — sleep ring + total + bedtime + Core/Deep/REM bars
+ *   <zoidberg-metric-card>     — icon + label + value + unit + progress + delta + streak
+ *   <zoidberg-state-tag-card>  — small mood pill (orange/red/purple/teal/cyan)
+ *   <zoidberg-title-card>      — gradient "ZOIDBERG HEALTH" Bangers title + date
+ *   <zoidberg-weekly-card>     — weekly pills (workouts / steps / hrv / sleep)
+ *
+ * All cards are pure HTMLElements (no LitElement dep), small footprint,
+ * designed to match Zoidberg web app on a #ffb920 background.
+ */
+
+const COMMON = `
+  :host { display: block; }
+  *, *::before, *::after { box-sizing: border-box; }
+  .card {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    border: 2px solid #f0ece8;
+    font-family: 'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+    color: #1a1a2e;
+    position: relative;
+  }
+  .label-tiny {
+    font-size: 11px;
+    font-weight: 700;
+    color: #9ca3af;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .muted { color: #6b7280; }
+  .streak-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #c084fc;
+    color: white;
+    border-radius: 10px;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 2px solid white;
+  }
+`;
+
+function fmtSleep(min) {
+  if (!min || min <= 0) return "–";
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return `${h}h ${m}m`;
+}
+
+function fmtBedtime(hour) {
+  if (hour == null || isNaN(hour)) return "–";
+  const h = Math.floor(hour);
+  const m = Math.round((hour - h) * 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function parseSleepHM(value) {
+  if (!value) return 0;
+  // Accept formats: "7h30", "7h 30m", "8h00", or a raw number of minutes
+  const num = parseFloat(value);
+  if (!isNaN(num) && String(value).trim() === String(num)) return num; // raw minutes
+  const m = String(value).match(/(\d+)\s*h\s*(\d+)?/i);
+  if (m) return parseInt(m[1]) * 60 + parseInt(m[2] || 0);
+  return num || 0;
+}
+
+function num(state) {
+  if (state == null) return null;
+  const v = parseFloat(state);
+  return isFinite(v) ? v : null;
+}
+
+// =========================================================================
+// 1) RECOVERY SCORE CARD
+// =========================================================================
+class RecoveryScoreCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      entity: "sensor.zoidberg_recovery_score",
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._update(); }
+  getCardSize() { return 2; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".wrap")) return;
+    const style = document.createElement("style");
+    style.textContent = COMMON + `
+      .wrap { display:flex; align-items:center; gap:20px; padding:20px 24px; min-width:220px; }
+      .ring { position:relative; width:80px; height:80px; flex-shrink:0; }
+      .score-text {
+        position:absolute; top:50%; left:50%;
+        transform: translate(-50%,-50%);
+        font-size:24px; font-weight:800;
+        font-family: 'Bangers', system-ui, sans-serif;
+        letter-spacing: 0.5px;
+      }
+      .meta-label { font-size:11px; font-weight:700; color:#9ca3af; letter-spacing:1px; text-transform:uppercase; }
+      .meta-status { font-size:18px; font-weight:700; color:#1a1a2e; margin-top:4px; }
+      .meta-sub { font-size:12px; color:#6b7280; margin-top:4px; }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "card wrap";
+    wrap.innerHTML = `
+      <div class="ring">
+        <svg width="80" height="80">
+          <circle cx="40" cy="40" r="34" fill="none" stroke="#f0ece8" stroke-width="7"/>
+          <circle class="ring-fg" cx="40" cy="40" r="34" fill="none" stroke="#22c55e" stroke-width="7"
+            stroke-dasharray="213.6" stroke-dashoffset="213.6"
+            stroke-linecap="round" transform="rotate(-90 40 40)"
+            style="transition: stroke-dashoffset 1s ease, stroke 0.4s ease;"/>
+        </svg>
+        <div class="score-text">–</div>
+      </div>
+      <div>
+        <div class="meta-label">Recovery Score</div>
+        <div class="meta-status">–</div>
+        <div class="meta-sub">HRV · Freq. Card. · Sono</div>
+      </div>
+    `;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+  }
+
+  _update() {
+    if (!this._hass || !this.shadowRoot.querySelector(".wrap")) return;
+    const score = num(this._hass.states[this._config.entity]?.state) ?? 0;
+    const color = score >= 75 ? "#22c55e" : score >= 50 ? "#f59e0b" : "#ef4444";
+    const label = score >= 75 ? "Pronto para treinar" : score >= 50 ? "Dia de recuperação" : "Descansa hoje";
+    const dashOffset = 213.6 * (1 - score / 100);
+    this.shadowRoot.querySelector(".ring-fg").style.stroke = color;
+    this.shadowRoot.querySelector(".ring-fg").setAttribute("stroke-dashoffset", dashOffset);
+    this.shadowRoot.querySelector(".score-text").textContent = Math.round(score);
+    this.shadowRoot.querySelector(".score-text").style.color = color;
+    this.shadowRoot.querySelector(".meta-status").textContent = label;
+    const wrap = this.shadowRoot.querySelector(".wrap");
+    wrap.style.borderColor = color + "30";
+    wrap.style.borderWidth = "2px";
+  }
+}
+customElements.define("recovery-score-card", RecoveryScoreCard);
+
+// =========================================================================
+// 2) SLEEP BREAKDOWN CARD
+// =========================================================================
+class SleepBreakdownCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      total_entity: "sensor.zoidberg_sono_total",
+      core_entity: "sensor.zoidberg_sono_core",
+      deep_entity: "sensor.zoidberg_sono_deep",
+      rem_entity: "sensor.zoidberg_sono_rem",
+      bedtime_entity: "sensor.zoidberg_hora_deitar",
+      sleep_target: 390,
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._update(); }
+  getCardSize() { return 3; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".wrap")) return;
+    const style = document.createElement("style");
+    style.textContent = COMMON + `
+      .wrap {
+        padding: 16px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 210px;
+      }
+      .head { display: flex; align-items: center; gap: 12px; }
+      .ring { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
+      .ring-emoji {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%,-50%);
+        font-size: 22px;
+      }
+      .total-text { font-size: 20px; font-weight: 700; color: #1a1a2e; }
+      .total-sub { font-size: 12px; color: #6b7280; font-weight: 500; }
+      .bedtime { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+      .stages { display: flex; flex-direction: column; gap: 5px; }
+      .stage-row { display: flex; align-items: center; gap: 8px; }
+      .stage-label { font-size: 11px; color: #6b7280; width: 30px; font-weight: 600; }
+      .stage-bar { flex: 1; height: 6px; background: #f0ece8; border-radius: 3px; overflow: hidden; position: relative; }
+      .stage-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+      .stage-marker { position: absolute; top: 0; bottom: 0; width: 2px; background: #d1d5db; }
+      .stage-val { font-size: 11px; width: 38px; text-align: right; }
+      .stage-val.met { color: #16a34a; font-weight: 700; }
+      .nodata { font-size: 11px; color: #9ca3af; display: flex; align-items: center; gap: 4px; }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "card wrap";
+    wrap.innerHTML = `
+      <div class="head">
+        <div class="ring">
+          <svg width="56" height="56">
+            <circle cx="28" cy="28" r="22" fill="none" stroke="#f0ece8" stroke-width="5"/>
+            <circle class="ring-fg" cx="28" cy="28" r="22" fill="none" stroke="#c084fc" stroke-width="5"
+              stroke-dasharray="138.2" stroke-dashoffset="138.2"
+              stroke-linecap="round" transform="rotate(-90 28 28)"
+              style="transition: stroke-dashoffset 0.8s ease;"/>
+          </svg>
+          <span class="ring-emoji">😴</span>
+        </div>
+        <div>
+          <div class="total-text">–</div>
+          <div class="total-sub">Sono Total</div>
+          <div class="bedtime"></div>
+        </div>
+      </div>
+      <div class="body"></div>
+    `;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+  }
+
+  _update() {
+    if (!this._hass || !this.shadowRoot.querySelector(".wrap")) return;
+    const c = this._config;
+    const totalMin = parseSleepHM(this._hass.states[c.total_entity]?.state);
+    const coreMin = num(this._hass.states[c.core_entity]?.state) || 0;
+    const deepMin = num(this._hass.states[c.deep_entity]?.state) || 0;
+    const remMin = num(this._hass.states[c.rem_entity]?.state) || 0;
+    const bedtimeRaw = this._hass.states[c.bedtime_entity]?.state;
+    const bedtimeHour = num(bedtimeRaw);
+
+    const pct = Math.min(1, totalMin / (c.sleep_target || 390));
+    const dashOffset = 138.2 * (1 - pct);
+    this.shadowRoot.querySelector(".ring-fg").setAttribute("stroke-dashoffset", dashOffset);
+    this.shadowRoot.querySelector(".total-text").textContent = fmtSleep(totalMin);
+    const bedEl = this.shadowRoot.querySelector(".bedtime");
+    if (bedtimeHour != null) {
+      bedEl.textContent = `🛏 ${fmtBedtime(bedtimeHour)}`;
+    } else if (bedtimeRaw && bedtimeRaw !== "—" && bedtimeRaw !== "unknown") {
+      bedEl.textContent = `🛏 ${bedtimeRaw}`;
+    } else {
+      bedEl.textContent = "";
+    }
+
+    // Stages
+    const body = this.shadowRoot.querySelector(".body");
+    const hasStages = deepMin > 0 || remMin > 0;
+    if (hasStages) {
+      const stages = [
+        { label: "Core", min: coreMin, color: "#a78bfa", target: null },
+        { label: "Deep", min: deepMin, color: "#7c3aed", target: 90 },
+        { label: "REM", min: remMin, color: "#5b8dee", target: 90 },
+      ];
+      body.innerHTML = `<div class="stages">${stages.map(s => {
+        const pct = Math.min(100, totalMin > 0 ? (s.min / totalMin) * 100 : 0);
+        const markerPct = s.target && totalMin > 0 ? Math.min(99, (s.target / totalMin) * 100) : null;
+        const met = s.target && s.min >= s.target;
+        return `
+          <div class="stage-row">
+            <div class="stage-label">${s.label}</div>
+            <div class="stage-bar">
+              <div class="stage-fill" style="width:${pct}%; background:${s.color};"></div>
+              ${markerPct != null ? `<div class="stage-marker" style="left:${markerPct}%;"></div>` : ""}
+            </div>
+            <div class="stage-val ${met ? "met" : ""}">${s.min > 0 ? fmtSleep(s.min) : "–"}</div>
+          </div>
+        `;
+      }).join("")}</div>`;
+    } else {
+      body.innerHTML = `<div class="nodata"><span>⚠️</span><span>Fases sem dados · Shortcut não envia breakdown</span></div>`;
+    }
+  }
+}
+customElements.define("sleep-breakdown-card", SleepBreakdownCard);
+
+// =========================================================================
+// 3) ZOIDBERG METRIC CARD (icon + value + progress + delta + streak)
+// =========================================================================
+class ZoidbergMetricCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      entity: "",
+      label: "",
+      icon: "❤️",
+      color: "#5b8dee",
+      unit: "",
+      target: null,
+      delta_entity: null,
+      delta_label: "vs 7d",
+      delta_unit: "",
+      streak: 0,
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._update(); }
+  getCardSize() { return 1; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".wrap")) return;
+    const style = document.createElement("style");
+    style.textContent = COMMON + `
+      .wrap {
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 130px;
+      }
+      .head { display: flex; align-items: center; gap: 8px; }
+      .icon { font-size: 22px; }
+      .label { font-size: 11px; font-weight: 700; color: #9ca3af; letter-spacing: 1px; text-transform: uppercase; }
+      .value-row { display: flex; align-items: baseline; gap: 4px; }
+      .value { font-size: 26px; font-weight: 800; color: #1a1a2e; line-height: 1; }
+      .unit { font-size: 13px; color: #6b7280; font-weight: 600; }
+      .delta { font-size: 11px; color: #6b7280; }
+      .delta.up { color: #16a34a; }
+      .delta.down { color: #ef4444; }
+      .progress-bar { height: 4px; background: #f0ece8; border-radius: 2px; overflow: hidden; }
+      .progress-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "card wrap";
+    wrap.innerHTML = `
+      <div class="head">
+        <span class="icon"></span>
+        <span class="label"></span>
+        <span class="streak-badge" hidden></span>
+      </div>
+      <div class="value-row">
+        <span class="value">–</span>
+        <span class="unit"></span>
+      </div>
+      <div class="delta"></div>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+    `;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+  }
+
+  _update() {
+    if (!this._hass || !this.shadowRoot.querySelector(".wrap")) return;
+    const c = this._config;
+    const raw = this._hass.states[c.entity]?.state;
+    const v = num(raw);
+    const unit = c.unit || (this._hass.states[c.entity]?.attributes?.unit_of_measurement || "");
+
+    this.shadowRoot.querySelector(".icon").textContent = c.icon;
+    this.shadowRoot.querySelector(".label").textContent = c.label;
+    this.shadowRoot.querySelector(".value").textContent = v != null ? Math.round(v).toLocaleString("pt-PT") : (raw || "–");
+    this.shadowRoot.querySelector(".unit").textContent = unit;
+
+    // Delta
+    let deltaText = "";
+    let deltaClass = "";
+    if (c.delta_entity && v != null) {
+      const baseline = num(this._hass.states[c.delta_entity]?.state);
+      if (baseline != null && baseline > 0) {
+        const d = Math.round(v - baseline);
+        deltaText = `${d >= 0 ? "+" : ""}${d}${c.delta_unit || unit} ${c.delta_label}`;
+        deltaClass = d >= 0 ? "up" : "down";
+      }
+    }
+    const deltaEl = this.shadowRoot.querySelector(".delta");
+    deltaEl.textContent = deltaText;
+    deltaEl.className = "delta " + deltaClass;
+
+    // Progress
+    const pf = this.shadowRoot.querySelector(".progress-fill");
+    if (c.target && v != null && c.target > 0) {
+      const pct = Math.min(100, (v / c.target) * 100);
+      pf.style.width = pct + "%";
+      pf.style.background = c.color;
+    } else {
+      pf.style.width = "100%";
+      pf.style.background = c.color;
+      pf.style.opacity = "0.3";
+    }
+
+    // Streak
+    const sb = this.shadowRoot.querySelector(".streak-badge");
+    if (c.streak > 0) {
+      sb.textContent = `🔥${c.streak}`;
+      sb.hidden = false;
+    } else {
+      sb.hidden = true;
+    }
+  }
+}
+customElements.define("zoidberg-metric-card", ZoidbergMetricCard);
+
+// =========================================================================
+// 4) ZOIDBERG STATE TAG
+// =========================================================================
+const STATE_COLORS = {
+  idle: "#cc8800", happy: "#cc8800", neutral: "#cc8800",
+  pumped: "#cc3800",
+  tired: "#5a4880",
+  sick: "#4a8070",
+  zen: "#3a9ab0",
+};
+
+class ZoidbergStateTag extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      mood_entity: "sensor.zoidberg_mood",
+      label_entity: null,
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._update(); }
+  getCardSize() { return 1; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".tag")) return;
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display:inline-block; }
+      .tag {
+        background: #5b8dee;
+        color: white;
+        padding: 6px 16px;
+        border-radius: 999px;
+        font: 700 13px/1.2 'Inter','Segoe UI',sans-serif;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        display: inline-block;
+        transition: background 0.4s ease;
+      }
+    `;
+    const tag = document.createElement("div");
+    tag.className = "tag";
+    tag.textContent = "–";
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(tag);
+  }
+
+  _update() {
+    if (!this._hass) return;
+    const c = this._config;
+    const mood = (this._hass.states[c.mood_entity]?.state || "idle").toLowerCase();
+    const label = c.label_entity
+      ? this._hass.states[c.label_entity]?.state
+      : mood;
+    const color = STATE_COLORS[mood] || "#5b8dee";
+    const tag = this.shadowRoot.querySelector(".tag");
+    tag.style.background = color;
+    tag.textContent = label || mood.toUpperCase();
+  }
+}
+customElements.define("zoidberg-state-tag-card", ZoidbergStateTag);
+
+// =========================================================================
+// 5) ZOIDBERG TITLE — "ZOIDBERG HEALTH" gradient + date
+// =========================================================================
+class ZoidbergTitleCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = { title: "ZOIDBERG HEALTH", ...config };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._updateDate(); }
+  getCardSize() { return 2; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".title")) return;
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display: block; text-align: center; }
+      .title-wrap { display: inline-block; }
+      .title {
+        font: 400 64px/0.95 'Bangers','Bungee','Comic Sans MS',cursive;
+        letter-spacing: 3px;
+        margin: 0;
+        background: linear-gradient(160deg, #fff700 0%, #ff3cac 50%, #00d4ff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        -webkit-text-stroke: 2.5px #1a0030;
+        filter: drop-shadow(3px 4px 0px #1a0030) drop-shadow(0 0 18px rgba(255,60,172,0.6));
+        transform: rotate(-1.5deg);
+        display: inline-block;
+        transition: filter 0.3s ease;
+      }
+      .date {
+        color: #6b7280;
+        font: 500 13px 'Inter','Segoe UI',sans-serif;
+        margin-top: 6px;
+      }
+      @import url('https://fonts.googleapis.com/css2?family=Bangers&display=swap');
+    `;
+    // Need to actually load the font in the document head, not just inside shadow root
+    if (!document.head.querySelector('link[data-zoidberg-font]')) {
+      const fontLink = document.createElement('link');
+      fontLink.rel = 'stylesheet';
+      fontLink.href = 'https://fonts.googleapis.com/css2?family=Bangers&display=swap';
+      fontLink.dataset.zoidbergFont = '1';
+      document.head.appendChild(fontLink);
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "title-wrap";
+    wrap.innerHTML = `<h1 class="title">${this._config.title}</h1><div class="date"></div>`;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+    this._updateDate();
+  }
+
+  _updateDate() {
+    const dateEl = this.shadowRoot.querySelector(".date");
+    if (!dateEl) return;
+    const now = new Date();
+    dateEl.textContent = now.toLocaleDateString("pt-PT", {
+      weekday: "long", day: "numeric", month: "long",
+    });
+  }
+}
+customElements.define("zoidberg-title-card", ZoidbergTitleCard);
+
+// =========================================================================
+// 6) ZOIDBERG WEEKLY SUMMARY
+// =========================================================================
+class ZoidbergWeeklyCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      workouts_entity: "sensor.zoidberg_treinos_semana",
+      steps_week_entity: "sensor.zoidberg_passos_semana",
+      hrv_week_entity: "sensor.zoidberg_hrv_semana",
+      sleep_week_entity: "sensor.zoidberg_sono_semana",
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._update(); }
+  getCardSize() { return 2; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".wrap")) return;
+    const style = document.createElement("style");
+    style.textContent = COMMON + `
+      .wrap { padding: 16px 24px; max-width: 720px; margin: 0 auto; }
+      .head-label { font-size: 13px; font-weight: 700; color: #6b7280; margin-bottom: 12px; }
+      .pills { display: flex; gap: 10px; flex-wrap: wrap; }
+      .pill {
+        display: flex; align-items: center; gap: 6px;
+        background: #f5f0eb;
+        border-radius: 10px;
+        padding: 6px 12px;
+        font-size: 14px;
+      }
+      .pill .ico { font-size: 16px; }
+      .pill .txt { font-weight: 600; color: #1a1a2e; }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "card wrap";
+    wrap.innerHTML = `
+      <div class="head-label">ESTA SEMANA</div>
+      <div class="pills"></div>
+    `;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+  }
+
+  _update() {
+    if (!this._hass) return;
+    const c = this._config;
+    const workouts = num(this._hass.states[c.workouts_entity]?.state);
+    const stepsW = num(this._hass.states[c.steps_week_entity]?.state);
+    const hrvW = num(this._hass.states[c.hrv_week_entity]?.state);
+    const sleepW = parseSleepHM(this._hass.states[c.sleep_week_entity]?.state);
+
+    const pills = [];
+    if (workouts != null) pills.push({ icon: "🏋️", txt: `${workouts} treino${workouts !== 1 ? "s" : ""}` });
+    if (stepsW != null && stepsW > 0) pills.push({ icon: "👟", txt: `${(stepsW / 1000).toFixed(1)}k passos` });
+    if (hrvW != null && hrvW > 0) pills.push({ icon: "💚", txt: `HRV ${Math.round(hrvW)}ms` });
+    if (sleepW > 0) pills.push({ icon: "😴", txt: fmtSleep(sleepW) });
+
+    const pillsEl = this.shadowRoot.querySelector(".pills");
+    pillsEl.innerHTML = pills.map(p => `
+      <div class="pill"><span class="ico">${p.icon}</span><span class="txt">${p.txt}</span></div>
+    `).join("");
+  }
+}
+customElements.define("zoidberg-weekly-card", ZoidbergWeeklyCard);
+
+// =========================================================================
+// Lovelace card-picker registration
+// =========================================================================
+window.customCards = window.customCards || [];
+[
+  { type: "recovery-score-card", name: "Zoidberg · Recovery Score", description: "Circular ring with recovery score + status label." },
+  { type: "sleep-breakdown-card", name: "Zoidberg · Sleep Breakdown", description: "Sleep ring + bedtime + Core/Deep/REM bars." },
+  { type: "zoidberg-metric-card", name: "Zoidberg · Metric", description: "Generic metric with progress bar, delta vs baseline, streak." },
+  { type: "zoidberg-state-tag-card", name: "Zoidberg · State Tag", description: "Mood-colored pill tag." },
+  { type: "zoidberg-title-card", name: "Zoidberg · Title", description: "Bangers gradient title + date." },
+  { type: "zoidberg-weekly-card", name: "Zoidberg · Weekly Summary", description: "Weekly pills (workouts, steps, HRV, sleep)." },
+].forEach(c => window.customCards.push({ ...c, preview: false }));
+
+console.info(
+  "%c ZOIDBERG-CARDS %c v1.0.0 ",
+  "color:#FFD23F;background:#0B1226;padding:2px 6px;border-radius:3px",
+  "color:#fff;background:#1B2543;padding:2px 6px;border-radius:3px"
+);
