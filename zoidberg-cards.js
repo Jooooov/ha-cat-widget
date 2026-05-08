@@ -458,17 +458,43 @@ class ZoidbergStateTag extends HTMLElement {
     this.shadowRoot.appendChild(tag);
   }
 
+  _computeState() {
+    if (!this._hass) return { label: "—", mood: "neutral" };
+    const s = (e) => parseFloat(this._hass.states[e]?.state);
+    const recovery = s("sensor.zoidberg_recovery_score");
+    const battery = s("sensor.zoidberg_body_battery");
+    const hrv = s("sensor.zoidberg_hrv");
+    const rhr = s("sensor.zoidberg_rhr");
+    const sleep = s("sensor.zoidberg_sono_eficiencia");
+    const passos = s("sensor.zoidberg_passos");
+    const calorias = s("sensor.zoidberg_calorias");
+    const mental = s("sensor.zoidberg_mental");
+    const stress = (this._hass.states["sensor.zoidberg_stress"]?.state || "").toLowerCase();
+    const moodRaw = (this._hass.states["sensor.zoidberg_mood"]?.state || "").toLowerCase();
+
+    // Mirror Zoidberg backend state logic (priority order)
+    if (rhr > 75 && rhr - 65 > 10) return { label: "RESSACA", mood: "sick" };
+    if (stress === "high" || stress === "alto") return { label: "STRESSADO", mood: "sick" };
+    if (recovery < 30) return { label: "EXAUSTO", mood: "tired" };
+    if (battery < 30) return { label: "SEM ENERGIA", mood: "tired" };
+    if (sleep > 0 && sleep < 70) return { label: "MAL DORMIDO", mood: "tired" };
+    if (hrv >= 55 && battery >= 75 && recovery >= 75) return { label: "PUMPED", mood: "pumped" };
+    if (passos > 0 && passos < 3000 && calorias < 200) return { label: "SEDENTÁRIO", mood: "tired" };
+    if (mental >= 85 && battery >= 60) return { label: "EM FOCO", mood: "pumped" };
+    if (sleep >= 90 || moodRaw === "calm" || moodRaw === "zen") return { label: "ZEN", mood: "zen" };
+    if (recovery >= 75) return { label: "RECUPERADO", mood: "pumped" };
+    return { label: "NEUTRAL", mood: "neutral" };
+  }
+
   _update() {
     if (!this._hass) return;
-    const c = this._config;
-    const mood = (this._hass.states[c.mood_entity]?.state || "idle").toLowerCase();
-    const label = c.label_entity
-      ? this._hass.states[c.label_entity]?.state
-      : mood;
+    const { label, mood } = this._computeState();
     const color = STATE_COLORS[mood] || "#5b8dee";
     const tag = this.shadowRoot.querySelector(".tag");
-    tag.style.background = color;
-    tag.textContent = label || mood.toUpperCase();
+    if (tag) {
+      tag.style.background = color;
+      tag.textContent = label;
+    }
   }
 }
 customElements.define("zoidberg-state-tag-card", ZoidbergStateTag);
