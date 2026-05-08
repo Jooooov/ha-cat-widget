@@ -849,8 +849,13 @@ class ZoidbergRing extends HTMLElement {
       ...config,
     };
     this._render();
+    // Defensive: in case hass was set BEFORE setConfig
+    if (this._hass) this._update();
   }
-  set hass(h) { this._hass = h; this._update(); }
+  set hass(h) {
+    this._hass = h;
+    if (this._config) this._update();
+  }
   getCardSize() { return 1; }
 
   _render() {
