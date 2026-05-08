@@ -828,6 +828,312 @@ class ZoidbergMiniMetric extends HTMLElement {
 customElements.define("zoidberg-mini-metric", ZoidbergMiniMetric);
 
 // =========================================================================
+// 9) ZOIDBERG RING — Apple Activity-style ring with icon + value
+// =========================================================================
+class ZoidbergRing extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      entity: "",
+      label: "",
+      icon: "•",
+      color: "#5b8dee",
+      track_color: "#1a0030",
+      unit: "",
+      target: 100,
+      size: 120,
+      stroke: 14,
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._update(); }
+  getCardSize() { return 1; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".ring-wrap")) return;
+    const c = this._config;
+    const r = (c.size - c.stroke) / 2;
+    const circ = 2 * Math.PI * r;
+    const cx = c.size / 2;
+    const cy = c.size / 2;
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display: block; }
+      .ring-wrap {
+        position: relative;
+        width: ${c.size}px;
+        height: ${c.size}px;
+        font-family: 'Inter','Segoe UI',sans-serif;
+        filter: drop-shadow(0 4px 10px rgba(0,0,0,0.15));
+      }
+      .ring-svg { position: absolute; inset: 0; }
+      .ring-icon {
+        position: absolute; top: 26%; left: 50%;
+        transform: translate(-50%, 0);
+        font-size: ${Math.round(c.size * 0.28)}px;
+        line-height: 1;
+      }
+      .ring-value {
+        position: absolute; top: 51%; left: 50%;
+        transform: translate(-50%, 0);
+        font-size: ${Math.round(c.size * 0.18)}px;
+        font-weight: 800;
+        color: #1a0030;
+        letter-spacing: -0.5px;
+      }
+      .ring-unit {
+        position: absolute; top: 73%; left: 50%;
+        transform: translate(-50%, 0);
+        font-size: ${Math.round(c.size * 0.085)}px;
+        font-weight: 700;
+        color: ${c.color};
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "ring-wrap";
+    wrap.innerHTML = `
+      <svg class="ring-svg" width="${c.size}" height="${c.size}" viewBox="0 0 ${c.size} ${c.size}">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
+          stroke="${c.color}" stroke-width="${c.stroke}" stroke-linecap="round"
+          opacity="0.18"/>
+        <circle class="ring-fg" cx="${cx}" cy="${cy}" r="${r}" fill="none"
+          stroke="${c.color}" stroke-width="${c.stroke}" stroke-linecap="round"
+          stroke-dasharray="${circ}" stroke-dashoffset="${circ}"
+          transform="rotate(-90 ${cx} ${cy})"
+          style="transition: stroke-dashoffset 1s ease;"/>
+      </svg>
+      <div class="ring-icon">${c.icon}</div>
+      <div class="ring-value">–</div>
+      <div class="ring-unit">${c.label}</div>
+    `;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+    this._circ = circ;
+  }
+
+  _update() {
+    if (!this._hass) return;
+    const c = this._config;
+    const raw = this._hass.states[c.entity]?.state;
+    const v = num(raw);
+    const target = c.target || 100;
+    const pct = v != null ? Math.max(0, Math.min(1.05, v / target)) : 0;
+    const offset = this._circ * (1 - Math.min(1, pct));
+    const fg = this.shadowRoot.querySelector(".ring-fg");
+    if (fg) fg.setAttribute("stroke-dashoffset", offset);
+
+    const valEl = this.shadowRoot.querySelector(".ring-value");
+    if (valEl) {
+      valEl.textContent = v != null ? Math.round(v).toLocaleString("pt-PT") : (raw || "–");
+    }
+  }
+}
+customElements.define("zoidberg-ring", ZoidbergRing);
+
+// =========================================================================
+// 10) ZOIDBERG ANATOMY — single card combining cat + rings + connector lines
+// =========================================================================
+class ZoidbergAnatomy extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      bg: "#ffb920",
+      riv_url: "https://cdn.jsdelivr.net/gh/Jooooov/ha-cat-widget@main/cat.riv",
+      // Each ring: { id, side: 'left'|'right', y_pct, anchor_x, anchor_y, ...ring config }
+      rings: [
+        { id: "sleep",  side: "left",  y: 16, anchor_x: 50, anchor_y: 22, entity: "sensor.zoidberg_sono_eficiencia", label: "Sleep", icon: "😴", color: "#7c3aed", target: 100, unit: "%" },
+        { id: "hrv",    side: "left",  y: 40, anchor_x: 50, anchor_y: 50, entity: "sensor.zoidberg_hrv", label: "HRV", icon: "❤️", color: "#5b8dee", target: 60, unit: "ms" },
+        { id: "rhr",    side: "left",  y: 60, anchor_x: 50, anchor_y: 56, entity: "sensor.zoidberg_rhr", label: "RHR", icon: "💗", color: "#ff6b6b", target: 80, unit: "bpm" },
+        { id: "battery",side: "left",  y: 80, anchor_x: 50, anchor_y: 65, entity: "sensor.zoidberg_body_battery", label: "Battery", icon: "🔋", color: "#fb923c", target: 100, unit: "%" },
+
+        { id: "mental",   side: "right", y: 16, anchor_x: 50, anchor_y: 18, entity: "sensor.zoidberg_mental", label: "Mental", icon: "🧠", color: "#42a5f5", target: 100, unit: "%" },
+        { id: "alertness",side: "right", y: 36, anchor_x: 56, anchor_y: 26, entity: "sensor.zoidberg_alertness_score", label: "Alert", icon: "👁️", color: "#a78bfa", target: 100, unit: "%" },
+        { id: "calorias", side: "right", y: 60, anchor_x: 50, anchor_y: 65, entity: "sensor.zoidberg_calorias", label: "Cal", icon: "🔥", color: "#fb923c", target: 600, unit: "kcal" },
+        { id: "passos",   side: "right", y: 80, anchor_x: 50, anchor_y: 88, entity: "sensor.zoidberg_passos", label: "Steps", icon: "👟", color: "#6bcb77", target: 8000, unit: "" },
+      ],
+      // Cat cx/cy in % (anchor reference)
+      cat_x: 50, cat_y: 55,
+      cat_w: 36,  // % of width
+      cat_h: 75,  // % of height
+      ring_size: 96,
+      ...config,
+    };
+    this._render();
+  }
+  set hass(h) { this._hass = h; this._propagate(); }
+  getCardSize() { return 8; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".anatomy")) return;
+    const c = this._config;
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display: block; }
+      .anatomy {
+        position: relative;
+        width: 100%;
+        height: 720px;
+        background: ${c.bg};
+        border-radius: 28px;
+        border: none;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.10);
+        overflow: hidden;
+        font-family: 'Inter','Segoe UI',sans-serif;
+      }
+      .connectors {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .connectors line {
+        stroke: rgba(26, 0, 48, 0.35);
+        stroke-width: 2;
+        stroke-dasharray: 4 5;
+      }
+      .connectors circle.endpoint {
+        fill: #1a0030;
+      }
+      .ring-slot {
+        position: absolute;
+      }
+      .ring-slot.left  { left:  3%; }
+      .ring-slot.right { right: 3%; }
+      .ring-slot.left[data-id]  { transform: translateY(-50%); }
+      .ring-slot.right[data-id] { transform: translateY(-50%); }
+      .cat-host {
+        position: absolute;
+        top: ${c.cat_y}%; left: ${c.cat_x}%;
+        width: ${c.cat_w}%; height: ${c.cat_h}%;
+        transform: translate(-50%, -50%);
+      }
+      .top-extras {
+        position: absolute;
+        top: 16px; left: 50%;
+        transform: translate(-50%, 0);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        z-index: 5;
+      }
+      .bottom-extras {
+        position: absolute;
+        bottom: 14px; left: 50%;
+        transform: translate(-50%, 0);
+      }
+      .speech-host {
+        position: absolute;
+        bottom: 14px; right: 3%;
+        max-width: 260px;
+      }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "anatomy";
+
+    // Build connectors SVG
+    const connSvg = `<svg class="connectors" viewBox="0 0 100 100" preserveAspectRatio="none"
+      style="width:100%; height:100%;">
+      ${c.rings.map(r => {
+        const ringCx = r.side === "left" ? 12 : 88;
+        const ringCy = r.y;
+        return `
+          <line x1="${ringCx}" y1="${ringCy}" x2="${r.anchor_x}" y2="${r.anchor_y}"
+                vector-effect="non-scaling-stroke"/>
+          <circle class="endpoint" cx="${r.anchor_x}" cy="${r.anchor_y}" r="0.6" vector-effect="non-scaling-stroke"/>
+        `;
+      }).join("")}
+    </svg>`;
+
+    // Cat host
+    const catHost = `
+      <div class="cat-host">
+        <cat-widget-card id="cat-inner"></cat-widget-card>
+      </div>
+    `;
+
+    // Ring slots
+    const ringSlots = c.rings.map(r => {
+      const sideClass = r.side;
+      return `<div class="ring-slot ${sideClass}" style="top:${r.y}%;" data-id="${r.id}"></div>`;
+    }).join("");
+
+    // Top extras: state tag + recovery
+    const topExtras = `
+      <div class="top-extras">
+        <zoidberg-state-tag-card id="state-tag"></zoidberg-state-tag-card>
+      </div>
+    `;
+
+    // Speech bubble bottom-right
+    const speech = `
+      <div class="speech-host">
+        <zoidberg-speech-bubble-card id="bubble"></zoidberg-speech-bubble-card>
+      </div>
+    `;
+
+    wrap.innerHTML = connSvg + catHost + ringSlots + topExtras + speech;
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+
+    // Configure subcomponents
+    const cat = this.shadowRoot.getElementById("cat-inner");
+    if (cat) {
+      cat.setConfig({
+        riv_url: c.riv_url,
+        bg_color: "transparent",
+        show_badge: false,
+        debug: false,
+      });
+    }
+    const stateTag = this.shadowRoot.getElementById("state-tag");
+    if (stateTag) stateTag.setConfig({});
+    const bubble = this.shadowRoot.getElementById("bubble");
+    if (bubble) bubble.setConfig({ tail: "right" });
+
+    // Mount rings into slots
+    c.rings.forEach(r => {
+      const slot = this.shadowRoot.querySelector(`[data-id="${r.id}"]`);
+      if (!slot) return;
+      const ring = document.createElement("zoidberg-ring");
+      ring.setConfig({
+        entity: r.entity,
+        label: r.label,
+        icon: r.icon,
+        color: r.color,
+        target: r.target,
+        unit: r.unit,
+        size: c.ring_size,
+        stroke: 12,
+      });
+      slot.appendChild(ring);
+    });
+
+    this._propagate();
+  }
+
+  _propagate() {
+    if (!this._hass) return;
+    const all = [
+      this.shadowRoot.getElementById("cat-inner"),
+      this.shadowRoot.getElementById("state-tag"),
+      this.shadowRoot.getElementById("bubble"),
+      ...this.shadowRoot.querySelectorAll("zoidberg-ring"),
+    ].filter(Boolean);
+    for (const el of all) el.hass = this._hass;
+  }
+}
+customElements.define("zoidberg-anatomy-card", ZoidbergAnatomy);
+
+// =========================================================================
 // Lovelace card-picker registration
 // =========================================================================
 window.customCards = window.customCards || [];
@@ -840,6 +1146,8 @@ window.customCards = window.customCards || [];
   { type: "zoidberg-weekly-card", name: "Zoidberg · Weekly Summary", description: "Weekly pills (workouts, steps, HRV, sleep)." },
   { type: "zoidberg-speech-bubble-card", name: "Zoidberg · Speech Bubble", description: "Comic-style bubble with typewriter effect." },
   { type: "zoidberg-mini-metric", name: "Zoidberg · Mini Metric", description: "Compact metric for body-part anchoring." },
+  { type: "zoidberg-ring", name: "Zoidberg · Activity Ring", description: "Apple-style activity ring." },
+  { type: "zoidberg-anatomy-card", name: "Zoidberg · Anatomy", description: "Cat in center + activity rings + connector lines pointing at body parts." },
 ].forEach(c => window.customCards.push({ ...c, preview: false }));
 
 console.info(
