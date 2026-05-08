@@ -318,6 +318,8 @@ class CatWidgetCard extends HTMLElement {
       voc_entity: config.voc_entity || "sensor.gas_sensor_compostos_organicos_volateis",
       mood_override: config.mood_override || null, // for testing
       show_badge: config.show_badge !== false,
+      bg_color: config.bg_color || "transparent",
+      debug: config.debug || false,
       ...config,
     };
     this._render();
@@ -339,6 +341,9 @@ class CatWidgetCard extends HTMLElement {
 
     const stage = document.createElement("div");
     stage.className = "stage mood-idle";
+    if (this._config.bg_color && this._config.bg_color !== "transparent") {
+      stage.style.background = this._config.bg_color;
+    }
 
     const wrap = document.createElement("div");
     wrap.className = "wrap";
@@ -461,11 +466,25 @@ class CatWidgetCard extends HTMLElement {
     const showerOn = this._stateStr(c.shower_entity) === "on";
     const voc = this._stateNum(c.voc_entity);
 
-    if ((voc !== null && voc > 1.0) || moodStr === "sick" || moodStr === "stressed") return "sick";
-    if ((battery !== null && battery < 30) || (recovery !== null && recovery < 30)) return "tired";
-    if ((hrv !== null && hrv >= 50) && (battery !== null && battery >= 70)) return "pumped";
-    if ((sleep !== null && sleep >= 90) || moodStr === "calm" || moodStr === "zen" || showerOn) return "zen";
-    return "idle";
+    let mood = "idle";
+    let reason = "default";
+    if ((voc !== null && voc > 1.0) || moodStr === "sick" || moodStr === "stressed") {
+      mood = "sick"; reason = `voc=${voc}, mood=${moodStr}`;
+    } else if ((battery !== null && battery < 30) || (recovery !== null && recovery < 30)) {
+      mood = "tired"; reason = `battery=${battery}, recovery=${recovery}`;
+    } else if ((hrv !== null && hrv >= 50) && (battery !== null && battery >= 70)) {
+      mood = "pumped"; reason = `hrv=${hrv}, battery=${battery}`;
+    } else if ((sleep !== null && sleep >= 90) || moodStr === "calm" || moodStr === "zen" || showerOn) {
+      mood = "zen"; reason = `sleep=${sleep}, mood=${moodStr}, shower=${showerOn}`;
+    } else {
+      reason = `hrv=${hrv}, battery=${battery}, recovery=${recovery}, sleep=${sleep}, mood=${moodStr}`;
+    }
+
+    if (this._config.debug) {
+      console.log(`[cat-widget] mood=${mood} reason=${reason}`);
+    }
+    this._lastReason = reason;
+    return mood;
   }
 
   _updateMood() {
