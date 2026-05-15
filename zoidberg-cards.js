@@ -1226,6 +1226,92 @@ class ZoidbergAnatomy extends HTMLElement {
 customElements.define("zoidberg-anatomy-card", ZoidbergAnatomy);
 
 // =========================================================================
+// 11) ZOIDBERG MULTI BUBBLES — fetches state.comments[] from API
+// =========================================================================
+class ZoidbergMultiBubbles extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+  setConfig(config) {
+    this._config = {
+      api_url: config.api_url || "http://76.13.66.197:8787/api/today",
+      max_bubbles: config.max_bubbles || 4,
+      ...config,
+    };
+    this._render();
+    this._fetchAndUpdate();
+    if (this._refreshInterval) clearInterval(this._refreshInterval);
+    this._refreshInterval = setInterval(() => this._fetchAndUpdate(), 5 * 60 * 1000);
+  }
+  set hass(h) { this._hass = h; }
+  getCardSize() { return 3; }
+
+  _render() {
+    if (this.shadowRoot.querySelector(".bubbles")) return;
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { display: block; }
+      .bubbles {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 100%;
+      }
+      .bubble {
+        background: #fff;
+        border: 2.5px solid #1a1a2e;
+        border-radius: 16px;
+        padding: 10px 14px;
+        font: 500 13px/1.45 'Inter','Segoe UI',sans-serif;
+        color: #1a1a2e;
+        box-shadow: 2.5px 2.5px 0 #1a1a2e;
+        animation: bubble-pop 0.4s ease-out backwards;
+      }
+      .bubble:nth-child(1) { animation-delay: 0s; }
+      .bubble:nth-child(2) { animation-delay: 0.15s; }
+      .bubble:nth-child(3) { animation-delay: 0.3s; }
+      .bubble:nth-child(4) { animation-delay: 0.45s; }
+      .bubble:nth-child(5) { animation-delay: 0.6s; }
+      .bubble .label {
+        font-size: 9px; font-weight: 800; color: #9ca3af;
+        letter-spacing: 1.2px; text-transform: uppercase;
+        margin-bottom: 3px;
+      }
+      .bubble .text { font-weight: 500; }
+      @keyframes bubble-pop {
+        from { opacity: 0; transform: translateX(-12px) scale(0.95); }
+        to   { opacity: 1; transform: translateX(0) scale(1); }
+      }
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "bubbles";
+    this.shadowRoot.appendChild(style);
+    this.shadowRoot.appendChild(wrap);
+  }
+
+  async _fetchAndUpdate() {
+    if (!this._config?.api_url) return;
+    const state = await fetchZoidbergState(this._config.api_url);
+    if (!state) return;
+    const comments = (state.comments || []).slice(0, this._config.max_bubbles);
+    const wrap = this.shadowRoot.querySelector(".bubbles");
+    if (!wrap) return;
+    wrap.innerHTML = comments.map((c, i) => `
+      <div class="bubble">
+        ${i === 0 ? '<div class="label">Zoidberg diz</div>' : ''}
+        <div class="text">${c}</div>
+      </div>
+    `).join("");
+  }
+
+  disconnectedCallback() {
+    if (this._refreshInterval) clearInterval(this._refreshInterval);
+  }
+}
+customElements.define("zoidberg-multi-bubbles", ZoidbergMultiBubbles);
+
+// =========================================================================
 // Lovelace card-picker registration
 // =========================================================================
 window.customCards = window.customCards || [];
